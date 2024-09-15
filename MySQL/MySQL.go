@@ -71,3 +71,79 @@ func GetConnection() (*sql.DB, error) {
 
 	return db, nil
 }
+
+// InsertOrUpdateSheetData inserts new sheet data or updates existing data.
+func InsertOrUpdateSheetData(db *sql.DB, sheetID string, data interface{}) error {
+	// Convert data to JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	// Insert or update sheet data
+	query := `
+        INSERT INTO sheet_data (sheet_id, data)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE data = VALUES(data), timestamp = CURRENT_TIMESTAMP
+    `
+	_, err = db.Exec(query, sheetID, jsonData)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetSheetData retrieves the data for a specific sheet based on the latest timestamp using a single query.
+func GetSheetData(db *sql.DB, sheetID string) (map[string]interface{}, error) {
+	var jsonData string
+
+	// Use a single query to join sheet_data and sheet_timestamps and get the latest data
+	query := `
+        SELECT sd.data
+        FROM sheet_data sd
+        JOIN sheet_timestamps st
+        ON sd.sheet_id = st.sheet_id
+        WHERE sd.sheet_id = ? AND sd.timestamp = st.last_write
+    `
+
+	row := db.QueryRow(query, sheetID)
+	err := row.Scan(&jsonData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert JSON to map
+	var data map[string]interface{}
+	err = json.Unmarshal([]byte(jsonData), &data)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// InsertOrUpdateTimestamp inserts or updates the last write timestamp for a specific sheet.
+func InsertOrUpdateTimestamp(db *sql.DB, sheetID string) error {
+	query := `
+        INSERT INTO sheet_timestamps (sheet_id, last_write)
+        VALUES (?, NOW())
+        ON DUPLICATE KEY UPDATE last_write = NOW()
+    `
+	_, err := db.Exec(query, sheetID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetLastWriteTimestamp retrieves the last write timestamp for a specific sheet.
+// func GetLastWriteTimestamp(db *sql.DB, sheetID string) (time.Time, error) {
+// 	var lastWrite time.Time
+// 	query := `SELECT last_write FROM sheet_timestamps WHERE sheet_id = ?`
+// 	row := db.QueryRow(query, sheetID)
+// 	err := row.Scan(&lastWrite)
+// 	if err != nil {
+// 		return time.Time{}, err
+// 	}
+// 	return lastWrite, nil
+// }

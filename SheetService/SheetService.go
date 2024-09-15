@@ -37,7 +37,7 @@ func GetSheetService() (*sheets.Service, error) {
 	return srv, nil
 }
 
-func ClearSheet(srv *sheets.Service, spreadsheetId, sheetRange string) error {
+func clearSheet(srv *sheets.Service, spreadsheetId, sheetRange string) error {
 	_, err := srv.Spreadsheets.Values.Clear(spreadsheetId, sheetRange, &sheets.ClearValuesRequest{}).Do()
 	if err != nil {
 		log.Fatalf("Unable to clear data from sheet: %v", err)
@@ -59,7 +59,7 @@ func GetSheetData(srv *sheets.Service, spreadsheetId string) [][]interface{} {
 // PushDataToSheet clears the sheet and then pushes new data to it.
 func PushDataToSheet(srv *sheets.Service, spreadsheetId string, values [][]interface{}) error {
 	// Clear the existing data in the specified range
-	err := ClearSheet(srv, spreadsheetId, sheetRange)
+	err := clearSheet(srv, spreadsheetId, sheetRange)
 	if err != nil {
 		return err
 	}
