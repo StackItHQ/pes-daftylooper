@@ -60,9 +60,9 @@ All the best ✨.
 
 ## Developer's Section
 
-SRN( Student Roll Number ) - PES2UG21CS385
-Name - Pranav Desai
-Email - mail.pranav.ad@gmail.com
+- SRN( Student Roll Number ) - PES2UG21CS385
+- Name - Pranav Desai
+- Email - mail.pranav.ad@gmail.com
 
 **Video Demo!**
 
