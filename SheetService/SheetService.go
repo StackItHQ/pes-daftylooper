@@ -98,7 +98,7 @@ func PollAndSyncSheet(srv *sheets.Service, db *sql.DB, sheetIds []string) {
 			// Store data in the database
 			// storeDataInDatabase(db, sheetID, data)
 
-			string,			// Here you would compare data between sheets and sync them accordingly
+			// Here you would compare data between sheets and sync them accordingly
 			// For simplicity, we assume one sheet's changes will be synced to the other.
 			mu.Lock()
 			for _, otherSheetId := range sheetIds {
