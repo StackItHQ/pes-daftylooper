@@ -73,7 +73,7 @@ func GetConnection() (*sql.DB, error) {
 	return db, nil
 }
 
-// InsertOrUpdateSheetData inserts new sheet data or updates existing data.
+// InsertOrUpdateSheetData inserts new sheet data or updates existing data (no timestamp).
 func InsertOrUpdateSheetData(db *sql.DB, sheetID string, data interface{}) error {
 	// Convert data to JSON
 	jsonData, err := json.Marshal(data)
@@ -81,11 +81,11 @@ func InsertOrUpdateSheetData(db *sql.DB, sheetID string, data interface{}) error
 		return err
 	}
 
-	// Insert or update sheet data
+	// Insert or update sheet data without timestamp
 	query := `
         INSERT INTO sheet_data (sheet_id, data)
         VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE data = VALUES(data), timestamp = CURRENT_TIMESTAMP
+        ON DUPLICATE KEY UPDATE data = VALUES(data)
     `
 	_, err = db.Exec(query, sheetID, jsonData)
 	if err != nil {
@@ -94,17 +94,18 @@ func InsertOrUpdateSheetData(db *sql.DB, sheetID string, data interface{}) error
 	return nil
 }
 
-// GetSheetData retrieves the data for a specific sheet based on the latest timestamp using a single query.
+// GetSheetData retrieves the data for a specific sheet based on the latest timestamp.
 func GetSheetData(db *sql.DB, sheetID string) (map[string]interface{}, error) {
 	var jsonData string
 
-	// Use a single query to join sheet_data and sheet_timestamps and get the latest data
+	// Use a query to retrieve the latest data for a sheet
 	query := `
         SELECT sd.data
         FROM sheet_data sd
-        JOIN sheet_timestamps st
-        ON sd.sheet_id = st.sheet_id
-        WHERE sd.sheet_id = ? AND sd.timestamp = st.last_write
+        JOIN timestamps t ON sd.sheet_id = t.sheet_id
+        WHERE sd.sheet_id = ?
+        ORDER BY t.timestamp DESC
+        LIMIT 1
     `
 
 	row := db.QueryRow(query, sheetID)
@@ -126,9 +127,9 @@ func GetSheetData(db *sql.DB, sheetID string) (map[string]interface{}, error) {
 // InsertOrUpdateTimestamp inserts or updates the last write timestamp for a specific sheet.
 func InsertOrUpdateTimestamp(db *sql.DB, sheetID string) error {
 	query := `
-        INSERT INTO sheet_timestamps (sheet_id, last_write)
+        INSERT INTO timestamps (sheet_id, timestamp)
         VALUES (?, NOW())
-        ON DUPLICATE KEY UPDATE last_write = NOW()
+        ON DUPLICATE KEY UPDATE timestamp = NOW()
     `
 	_, err := db.Exec(query, sheetID)
 	if err != nil {
@@ -138,75 +139,95 @@ func InsertOrUpdateTimestamp(db *sql.DB, sheetID string) error {
 }
 
 // GetLastWriteTimestamp retrieves the last write timestamp for a specific sheet.
-// func GetLastWriteTimestamp(db *sql.DB, sheetID string) (time.Time, error) {
-// 	var lastWrite time.Time
-// 	query := `SELECT last_write FROM sheet_timestamps WHERE sheet_id = ?`
-// 	row := db.QueryRow(query, sheetID)
-// 	err := row.Scan(&lastWrite)
-// 	if err != nil {
-// 		return time.Time{}, err
-// 	}
-// 	return lastWrite, nil
-// }
-
-// StoreDataInDatabase stores or updates data in the database with the latest timestamp.
-func StoreDataInDatabase(db *sql.DB, sheetID string, data [][]interface{}) error {
-	// Serialize data to JSON
-	dataJSON, err := json.Marshal(data)
+func GetLastWriteTimestamp(db *sql.DB, sheetID string) (time.Time, error) {
+	var lastWrite time.Time
+	query := `SELECT timestamp FROM timestamps WHERE sheet_id = ?`
+	row := db.QueryRow(query, sheetID)
+	err := row.Scan(&lastWrite)
 	if err != nil {
-		return fmt.Errorf("could not marshal data to JSON: %v", err)
+		return time.Time{}, err
+	}
+	return lastWrite, nil
+}
+
+// TruncateTables removes all data from the sheet_data and timestamps tables.
+func TruncateTables(db *sql.DB) error {
+	_, err := db.Exec("TRUNCATE TABLE sheet_data")
+	if err != nil {
+		return fmt.Errorf("could not truncate sheet_data table: %v", err)
 	}
 
-	// Convert timestamp to MySQL-compatible format
-	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05")
-
-	// Begin a transaction
-	tx, err := db.Begin()
+	_, err = db.Exec("TRUNCATE TABLE timestamps")
 	if err != nil {
-		return fmt.Errorf("could not begin transaction: %v", err)
-	}
-
-	// Update the data in the database
-	query := `
-    INSERT INTO sheet_data (sheet_id, data, timestamp)
-    VALUES (?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-        data = VALUES(data),
-        timestamp = VALUES(timestamp)`
-
-	_, err = tx.Exec(query, sheetID, dataJSON, timestamp)
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("could not insert/update data: %v", err)
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("could not commit transaction: %v", err)
+		return fmt.Errorf("could not truncate timestamps table: %v", err)
 	}
 
 	return nil
 }
 
+// StoreDataInDatabase inserts or updates data in the sheet_data table (no timestamp).
+func StoreDataInDatabase(db *sql.DB, sheetID string, data [][]interface{}) error {
+	// Prepare query for inserting/updating data
+	query := `INSERT INTO sheet_data (sheet_id, data)
+	          VALUES (?, ?)
+	          ON DUPLICATE KEY UPDATE data = VALUES(data)`
+
+	// Convert data to JSON
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("could not marshal data: %v", err)
+	}
+
+	_, err = db.Exec(query, sheetID, dataJSON)
+	if err != nil {
+		return fmt.Errorf("could not insert/update data: %v", err)
+	}
+
+	return nil
+}
+
+// StoreTimestampInDatabase inserts or updates the timestamp for the given sheet_id.
+func StoreTimestampInDatabase(db *sql.DB, sheetID string, timestamp time.Time) error {
+	// Convert timestamp to MySQL-compatible format (YYYY-MM-DD HH:MM:SS)
+	formattedTimestamp := timestamp.Format("2006-01-02 15:04:05")
+
+	_, err := db.Exec("TRUNCATE TABLE timestamps")
+	if err != nil {
+		return fmt.Errorf("could not truncate timestamps table: %v", err)
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO timestamps (sheet_id, timestamp) VALUES (?, ?)
+			ON DUPLICATE KEY UPDATE timestamp = VALUES(timestamp)`,
+		sheetID, formattedTimestamp)
+	if err != nil {
+		return fmt.Errorf("could not insert/update timestamp: %v", err)
+	}
+	return nil
+}
+
 // GetLatestDataFromDatabase retrieves the latest data from the database.
-func GetLatestDataFromDatabase(db *sql.DB, sheetID string) ([][]interface{}, error) {
+func GetLatestDataFromDatabase(db *sql.DB) ([][]interface{}, error) {
+	// Prepare query to join sheet_data and timestamps on sheet_id and get the latest data
 	query := `
-    SELECT data
-    FROM sheet_data
-    WHERE sheet_id = ?
-    ORDER BY timestamp DESC
-    LIMIT 1`
+        SELECT sd.data
+        FROM sheet_data sd
+        JOIN timestamps ts ON sd.sheet_id = ts.sheet_id
+    `
 
-	row := db.QueryRow(query, sheetID)
+	// Execute query
+	row := db.QueryRow(query)
 
+	// Scan the result
 	var dataJSON string
 	if err := row.Scan(&dataJSON); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no data found for sheet %s", sheetID)
+			return nil, fmt.Errorf("no latest data found")
 		}
 		return nil, fmt.Errorf("could not scan data: %v", err)
 	}
 
+	// Unmarshal JSON to data
 	var data [][]interface{}
 	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
 		return nil, fmt.Errorf("could not unmarshal data: %v", err)

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var syncInterval = 10 * time.Second // Polling interval
+var syncInterval = 1 * time.Second // Polling interval
 
 func main() {
 
@@ -36,6 +36,11 @@ func main() {
 	sheetIds := []string{
 		"1sWkUx69XVCdWpa9N6FLv-8emYdSMSLIIZJ8QhtlCAdg",
 		"1ymOzgTitOLpM1sg73xVcgxFU20xTA7zrO9fWq5GAnLY",
+		"1WX2lZlqCVO7joFIc5RC1UhqfMRnMuvboZWoui1hLQnk",
+	}
+
+	if err := sheetservice.InitializeSheets(srv, db, sheetIds); err != nil {
+		log.Fatalf("Failed to initialize sheets: %v", err)
 	}
 
 	go func() {
@@ -48,8 +53,6 @@ func main() {
 			}
 		}
 	}()
-
-	// Do conflict resolution somehow?
 
 	// Wait for goroutines (they won’t finish unless interrupted)
 	wg.Wait()
