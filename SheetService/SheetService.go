@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	mysql "sheets-sync-db/MySQL"
 	"sync"
 
 	"golang.org/x/oauth2/google"
@@ -18,7 +19,7 @@ var sheetRange = "Sheet1!A1:D10"
 func GetSheetService() (*sheets.Service, error) {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json") // Path to your Google API credentials
-	println(b)
+	fmt.Println("Got instance of Google sheets!")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
@@ -82,7 +83,9 @@ func PushDataToSheet(srv *sheets.Service, spreadsheetId string, values [][]inter
 	return nil
 }
 
+// PollAndSyncSheet polls Google Sheets, stores data in the database, and syncs updates to other sheets.
 func PollAndSyncSheet(srv *sheets.Service, db *sql.DB, sheetIds []string) {
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -93,20 +96,33 @@ func PollAndSyncSheet(srv *sheets.Service, db *sql.DB, sheetIds []string) {
 
 			// Poll Google Sheets
 			data := GetSheetData(srv, sheetID)
-			fmt.Printf("Data from sheet %s: %v\n", sheetID, data)
+			// fmt.Printf("Data from sheet %s: %v\n", sheetID, data)
 
-			// Store data in the database
-			// storeDataInDatabase(db, sheetID, data)
+			// Store data in the database with the latest timestamp
+			err := mysql.StoreDataInDatabase(db, sheetID, data)
+			if err != nil {
+				log.Printf("Error storing data in database for sheet %s: %v", sheetID, err)
+				return
+			}
 
-			// Here you would compare data between sheets and sync them accordingly
-			// For simplicity, we assume one sheet's changes will be synced to the other.
+			// Retrieve the latest data from the database
+			latestData, err := mysql.GetLatestDataFromDatabase(db, sheetID)
+			if err != nil {
+				log.Printf("Error getting latest data from database for sheet %s: %v", sheetID, err)
+				return
+			}
+
+			// Sync data to other sheets
 			mu.Lock()
 			for _, otherSheetId := range sheetIds {
 				if otherSheetId != sheetID {
-					// Example: Sync data to the other sheet
-					// Replace with actual data sync logic
-					PushDataToSheet(srv, otherSheetId, data)
-					fmt.Printf("Pushed data from sheet %s to sheet %s\n", sheetID, otherSheetId)
+					// Push latest data to the other sheet
+					err := PushDataToSheet(srv, otherSheetId, latestData)
+					if err != nil {
+						log.Printf("Error pushing data from sheet %s to sheet %s: %v", sheetID, otherSheetId, err)
+					} else {
+						fmt.Printf("Pushed data from sheet %s to sheet %s\n", sheetID, otherSheetId)
+					}
 				}
 			}
 			mu.Unlock()

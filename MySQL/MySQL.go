@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
 )
@@ -147,3 +148,69 @@ func InsertOrUpdateTimestamp(db *sql.DB, sheetID string) error {
 // 	}
 // 	return lastWrite, nil
 // }
+
+// StoreDataInDatabase stores or updates data in the database with the latest timestamp.
+func StoreDataInDatabase(db *sql.DB, sheetID string, data [][]interface{}) error {
+	// Serialize data to JSON
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("could not marshal data to JSON: %v", err)
+	}
+
+	// Convert timestamp to MySQL-compatible format
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05")
+
+	// Begin a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not begin transaction: %v", err)
+	}
+
+	// Update the data in the database
+	query := `
+    INSERT INTO sheet_data (sheet_id, data, timestamp)
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+        data = VALUES(data),
+        timestamp = VALUES(timestamp)`
+
+	_, err = tx.Exec(query, sheetID, dataJSON, timestamp)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("could not insert/update data: %v", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("could not commit transaction: %v", err)
+	}
+
+	return nil
+}
+
+// GetLatestDataFromDatabase retrieves the latest data from the database.
+func GetLatestDataFromDatabase(db *sql.DB, sheetID string) ([][]interface{}, error) {
+	query := `
+    SELECT data
+    FROM sheet_data
+    WHERE sheet_id = ?
+    ORDER BY timestamp DESC
+    LIMIT 1`
+
+	row := db.QueryRow(query, sheetID)
+
+	var dataJSON string
+	if err := row.Scan(&dataJSON); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no data found for sheet %s", sheetID)
+		}
+		return nil, fmt.Errorf("could not scan data: %v", err)
+	}
+
+	var data [][]interface{}
+	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
+		return nil, fmt.Errorf("could not unmarshal data: %v", err)
+	}
+
+	return data, nil
+}

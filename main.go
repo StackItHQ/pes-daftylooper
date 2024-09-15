@@ -34,8 +34,8 @@ func main() {
 	wg.Add(1)
 
 	sheetIds := []string{
-		"1sWkUx69XVCdWpa9N6FLv-8emYdSMSLIIZJ8QhtlCAdg"
-		// "1ymOzgTitOLpM1sg73xVcgxFU20xTA7zrO9fWq5GAnLY",
+		"1sWkUx69XVCdWpa9N6FLv-8emYdSMSLIIZJ8QhtlCAdg",
+		"1ymOzgTitOLpM1sg73xVcgxFU20xTA7zrO9fWq5GAnLY",
 	}
 
 	go func() {
@@ -44,7 +44,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				fmt.Println("Polling and syncing sheets...")
-				sheetservice.PollAndSyncSheet(srv, nil, sheetIds)
+				sheetservice.PollAndSyncSheet(srv, db, sheetIds)
 			}
 		}
 	}()
@@ -52,5 +52,5 @@ func main() {
 	// Do conflict resolution somehow?
 
 	// Wait for goroutines (they won’t finish unless interrupted)
-	// wg.Wait()
+	wg.Wait()
 }
