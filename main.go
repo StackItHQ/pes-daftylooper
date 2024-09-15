@@ -24,16 +24,31 @@ func main() {
 	wg.Add(1)
 
 	// Start a goroutine to handle polling every 10 seconds
+	// go func() {
+	// 	defer wg.Done()
+	// 	for {
+	// 		select {
+	// 		case <-ticker.C:
+	// 			// Poll Google Sheets and update the database
+	// 			fmt.Println("Polling Google Sheets...")
+	// 			data := sheetservice.GetSheetData(srv, spreadsheetId)
+	// 			fmt.Println("Google Sheet Data:", data)
+	// 		}
+	// 	}
+	// }()
+
+	sheetIds := []string{
+		"1sWkUx69XVCdWpa9N6FLv-8emYdSMSLIIZJ8QhtlCAdg",
+		"1ymOzgTitOLpM1sg73xVcgxFU20xTA7zrO9fWq5GAnLY",
+	}
+
 	go func() {
 		defer wg.Done()
 		for {
 			select {
 			case <-ticker.C:
-				// Poll Google Sheets and update the database
-				fmt.Println("Polling Google Sheets...")
-				data := sheetservice.GetSheetData(srv)
-				fmt.Println("Google Sheet Data:", data)
-
+				fmt.Println("Polling and syncing sheets...")
+				sheetservice.PollAndSyncSheet(srv, nil, sheetIds)
 			}
 		}
 	}()
